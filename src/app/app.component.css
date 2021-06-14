@@ -1,0 +1,28 @@
+.dropzone {
+  align-items: center;
+  background: lightgrey;
+  border: dashed 1px grey;
+  display: flex;
+  justify-content: center;
+  width: 300px;
+  height: 100px;
+}
+
+.hover {
+  background: grey;
+  border: dashed 1px darkgrey;
+}
+
+table {
+  width: 100%;
+  padding: 20px;
+}
+
+td.mat-column-amount {
+  text-align: right;
+}
+
+td.mat-cell {
+  padding-left: 0.5em;
+  padding-right: 0.5em;
+}
