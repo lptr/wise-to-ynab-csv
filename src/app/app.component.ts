@@ -4,7 +4,7 @@ import { ReadFile, ReadMode } from 'ngx-file-helpers';
 
 import * as Papa from 'papaparse';
 
-import { saveAs } from 'file-saver'
+import { saveAs } from 'file-saver';
 
 @Component({
   selector: 'app-root',
@@ -14,38 +14,23 @@ import { saveAs } from 'file-saver'
 export class AppComponent {
   title = 'wise-ynab-importer';
   readMode = ReadMode.arrayBuffer;
-  transactions: Transaction[];
+  transactions: Transaction[] = [];
   displayedColumns = [
-    "type",
-    "recordDate",
-    "valueDate",
     "id",
+    "date",
     "amount",
-    "payee",
-    "note1",
-    "note2",
-    "note3",
+    "description",
   ];
 
-  constructor() {}
+  constructor() { }
 
-  onFileLoad(file) {
-    const text = new TextDecoder('windows-1250').decode(file.content);
+  onFileLoad(file: any) {
+    const text = new TextDecoder('utf-8').decode(file.content);
     Papa.parse(text, {
-      delimiter: ";",
-      complete: (data) => {
-        console.log("Parsed data", data);
-        let csvRows = data.data;
-        // Ignore "Könyvelésre váró tételek"
-        while (csvRows.length) {
-          const header = csvRows.shift();
-          if (header[0] === "Könyvelt tételek") {
-            // Ignore table header
-            csvRows.shift();
-            break;
-          }
-        }
-
+      delimiter: ",",
+      complete: (csv: any) => {
+        let csvRows = csv.data;
+        csvRows.shift();
         let transactions: Transaction[] = [];
         for (let csvRow of csvRows) {
           if (csvRow[0] === "") {
@@ -66,68 +51,71 @@ export class AppComponent {
     const csvText = Papa.unparse(ynabTransactions, {
       delimiter: ",",
     });
-    const blob = new Blob([csvText], {type: "text/csv;charset=utf-8"});
+    const blob = new Blob([csvText], { type: "text/csv;charset=utf-8" });
     saveAs(blob, 'ynab-import.csv');
   }
 }
 
-// Típus;Könyvelés dátuma;Értéknap;Azonosító;Összeg;Közlemény/1;Közlemény/2;Közlemény/3;Közlemény/4;;
+// TransferWise ID	Date	Amount	Currency	Description	Payment Reference	Running Balance	Exchange From	Exchange To	Exchange Rate	Payer Name	Payee Name	Payee Account Number	Merchant	Total fees
 class Transaction {
-  private type: string;
-  private recordDate: Date;
-  private valueDate: Date;
   private id: string;
+  private date: Date;
   private amount: number;
-  private note1: string;
-  private payee: string;
-  private note2: string;
-  private note3: string;
+  private currency: string;
+  private description: string;
+  private reference: string;
+  private runningBalance: number;
+  private exchangeFrom: string | null;
+  private exchangeTo: string | null;
+  private exchangeRate: number | null;
+  private payerName: string | null;
+  private payeeName: string | null;
+  private payeeAccountNumber: string | null;
+  private merchant: string | null;
+  private totalFees: number;
 
-  constructor(row) {
-    this.type = row[0];
-    this.recordDate = parseDate(row[1]);
-    this.valueDate = parseDate(row[2]);
-    this.id = row[3];
-    this.amount = parseAmount(row[4]);
-    this.note1 = row[5];
-    this.payee = row[6];
-    this.note2 = row[7];
-    this.note3 = row[8];
+  constructor(row: Array<any>) {
+    this.id = row[0];
+    this.date = parseDate(row[1]);
+    this.amount = row[2];
+    this.currency = row[3];
+    this.description = row[4];
+    this.reference = row[5];
+    this.runningBalance = row[6];
+    this.exchangeFrom = row[7];
+    this.exchangeTo = row[8];
+    this.exchangeRate = row[9];
+    this.payerName = row[10];
+    this.payeeName = row[11];
+    this.payeeAccountNumber = row[12];
+    this.merchant = row[13];
+    this.totalFees = row[14];
   }
 
   toYnab() {
     // Date,Payee,Category,Memo,Outflow,Inflow
     return [
-      this.valueDate.toLocaleString("en-US").split(",")[0],
-      this.payee,
+      this.date.toLocaleString("en-US").split(",")[0],
+      this.mergePayee(),
       "",
-      this.mergeNotes(),
+      this.description,
       this.amount < 0 ? -this.amount : "",
       this.amount >= 0 ? this.amount : "",
     ];
   }
 
-  private mergeNotes() {
-    if (!this.note2 && !this.note3) {
-      return this.note1;
-    } else if (!this.note3) {
-      return this.note2;
+  private mergePayee() {
+    if (this.payeeName) {
+      return this.payeeName;
+    } if (this.payerName) {
+      return this.payerName;
     } else {
-      return this.note2 + " / " + this.note3;
+      return this.merchant;
     }
   }
 }
 
 function parseDate(date: string): Date {
-  const matcher = /(\d{4})\.(\d{2})\.(\d{2})\., \w+/.exec(date);
-  return new Date(+matcher[1], +matcher[2] - 1, +matcher[3]);
-}
-
-function parseAmount(amount: string): number {
-  const matcher = /(-?[\d\s]+)(?:,(\d+))? (\w+)/.exec(amount);
-  let result = +(matcher[1].replace(/\s+/g, ""));
-  if (matcher[2]) {
-    result += +matcher[2] / 100 * Math.sign(result + 0.5);
-  }
-  return result;
+  const matcher = /(\d\d)\-(\d\d)\-(\d{4})/.exec(date);
+  return new Date(+matcher[3], +matcher[2] - 1, +matcher[1]);
 }
