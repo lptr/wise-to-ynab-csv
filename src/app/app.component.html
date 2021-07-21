@@ -2,12 +2,12 @@
   <h1>Wise YNAB Importer</h1>
 </mat-toolbar>
 
+<div>
+  EUR exchange rate: <strong>{{ eurHufExchangeRate | number }}</strong> HUF
+</div>
+
 <div class="basic-container">
-  <div
-    class="dropzone"
-    [ngxFileDropzone]="readMode"
-    accept='text/csv; charset="utf-8"'
-    (fileDrop)="onFileLoad($event)">
+  <div class="dropzone" [ngxFileDropzone]="readMode" accept='text/csv; charset="utf-8"' (fileDrop)="onFileLoad($event)">
     Drop a CSV file in this zone.
   </div>
   <button mat-flat-button color="primary" [disabled]="!transactions" (click)="download()">Download YNAB CSV</button>
@@ -26,6 +26,11 @@
     <ng-container matColumnDef="amount">
       <th mat-header-cell *matHeaderCellDef> Amount </th>
       <td mat-cell *matCellDef="let transaction"> {{transaction.amount | number}} {{transaction.currency}}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="hufAmount">
+      <th mat-header-cell *matHeaderCellDef> HUF amount </th>
+      <td mat-cell *matCellDef="let transaction"> {{transaction.hufAmount | number}} HUF</td>
     </ng-container>
 
     <ng-container matColumnDef="description">

@@ -1,10 +1,11 @@
-import { Component } from '@angular/core';
+import { ChangeDetectorRef, Component } from '@angular/core';
 
 import { ReadFile, ReadMode } from 'ngx-file-helpers';
 
 import * as Papa from 'papaparse';
 
 import { saveAs } from 'file-saver';
+import { HttpClient } from '@angular/common/http';
 
 @Component({
   selector: 'app-root',
@@ -15,14 +16,24 @@ export class AppComponent {
   title = 'wise-ynab-importer';
   readMode = ReadMode.arrayBuffer;
   transactions: Transaction[] = [];
+  eurHufExchangeRate: number;
   displayedColumns = [
     "id",
     "date",
     "amount",
+    "hufAmount",
     "description",
   ];
 
-  constructor() { }
+  constructor(private http: HttpClient, private ref: ChangeDetectorRef) { }
+
+  ngOnInit() {
+    this.http.get('https://free.currconv.com/api/v7/convert?q=EUR_HUF&compact=ultra&apiKey=e948730e221a03682353').subscribe((data: any) => {
+      console.log("Exchange rate: ", data);
+      this.eurHufExchangeRate = data.EUR_HUF;
+      this.ref.detectChanges();
+    });
+  }
 
   onFileLoad(file: any) {
     const text = new TextDecoder('utf-8').decode(file.content);
@@ -36,7 +47,7 @@ export class AppComponent {
           if (csvRow[0] === "") {
             break;
           }
-          const transaction = new Transaction(csvRow);
+          const transaction = new Transaction(csvRow, this.eurHufExchangeRate);
           console.log(transaction);
           transactions.push(transaction);
         }
@@ -62,6 +73,7 @@ class Transaction {
   private date: Date;
   private amount: number;
   private currency: string;
+  private hufAmount: number;
   private description: string;
   private reference: string;
   private runningBalance: number;
@@ -74,7 +86,7 @@ class Transaction {
   private merchant: string | null;
   private totalFees: number;
 
-  constructor(row: Array<any>) {
+  constructor(row: Array<any>, eurHufExchangeRate: number) {
     this.id = row[0];
     this.date = parseDate(row[1]);
     this.amount = row[2];
@@ -90,6 +102,7 @@ class Transaction {
     this.payeeAccountNumber = row[12];
     this.merchant = row[13];
     this.totalFees = row[14];
+    this.hufAmount = calculateHufAmount(eurHufExchangeRate, this.currency, this.amount);
   }
 
   toYnab() {
@@ -99,8 +112,8 @@ class Transaction {
       this.mergePayee(),
       "",
       this.description,
-      this.amount < 0 ? -this.amount : "",
-      this.amount >= 0 ? this.amount : "",
+      this.hufAmount < 0 ? -this.hufAmount : "",
+      this.hufAmount >= 0 ? this.hufAmount : "",
     ];
   }
 
@@ -112,6 +125,16 @@ class Transaction {
     } else {
       return this.merchant;
     }
+  }
+}
+
+function calculateHufAmount(eurHufExchangeRate: number, currency: string, amount: number) {
+  if (currency === "HUF") {
+    return amount;
+  } else if (currency === "EUR") {
+    return amount * eurHufExchangeRate;
+  } else {
+    throw new Error("Unsupported currency: " + currency);
   }
 }
 
