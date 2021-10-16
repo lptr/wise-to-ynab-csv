@@ -5,7 +5,7 @@ import { ReadFile, ReadMode } from 'ngx-file-helpers';
 import * as Papa from 'papaparse';
 
 import { saveAs } from 'file-saver';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpClientJsonpModule } from '@angular/common/http';
 
 @Component({
   selector: 'app-root',
@@ -25,14 +25,10 @@ export class AppComponent {
     "description",
   ];
 
-  constructor(private http: HttpClient, private ref: ChangeDetectorRef) { }
+  private converter: CurrencyConverter;
 
-  ngOnInit() {
-    this.http.get('https://free.currconv.com/api/v7/convert?q=EUR_HUF&compact=ultra&apiKey=e948730e221a03682353').subscribe((data: any) => {
-      console.log("Exchange rate: ", data);
-      this.eurHufExchangeRate = data.EUR_HUF;
-      this.ref.detectChanges();
-    });
+  constructor(private http: HttpClient, private ref: ChangeDetectorRef) {
+    this.converter = new CurrencyConverter(http);
   }
 
   onFileLoad(file: any) {
@@ -47,7 +43,7 @@ export class AppComponent {
           if (csvRow[0] === "") {
             break;
           }
-          const transaction = new Transaction(csvRow, this.eurHufExchangeRate);
+          const transaction = new Transaction(csvRow, (amount: number, currency: string, date: string) => 1234);
           console.log(transaction);
           transactions.push(transaction);
         }
@@ -86,9 +82,10 @@ class Transaction {
   private merchant: string | null;
   private totalFees: number;
 
-  constructor(row: Array<any>, eurHufExchangeRate: number) {
+  constructor(row: Array<any>, currencyConverter: (amount: number, currency: string, date: string) => number) {
     this.id = row[0];
-    this.date = parseDate(row[1]);
+    const date = row[1];
+    this.date = parseDate(date);
     this.amount = row[2];
     this.currency = row[3];
     this.description = row[4];
@@ -102,7 +99,7 @@ class Transaction {
     this.payeeAccountNumber = row[12];
     this.merchant = row[13];
     this.totalFees = row[14];
-    this.hufAmount = calculateHufAmount(eurHufExchangeRate, this.currency, this.amount);
+    this.hufAmount = currencyConverter(this.amount, this.currency, date);
   }
 
   toYnab() {
@@ -128,7 +125,37 @@ class Transaction {
   }
 }
 
-function calculateHufAmount(eurHufExchangeRate: number, currency: string, amount: number) {
+class CurrencyConverter {
+  private eurExchangeRates: Promise<Map<string, number>>;
+
+  constructor(private http: HttpClient) {
+    this.eurExchangeRates = this.http.jsonp("https://jsonp.afeld.me/?callback=callback&url=https%3A%2F%2Fwww.ecb.europa.eu%2Fstats%2Feurofxref%2Feurofxref-hist-90d.xml", "callback").toPromise()
+      .then((data: string) => {
+        console.log("Running", data);
+        const xml: XMLDocument = new DOMParser().parseFromString(data["data"], "text/xml");
+        console.log("RATES: ", xml.evaluate(".//Cube[@currency='HUF']/@rate", xml.documentElement));
+        const rates = new Map<string, number>();
+        return rates;
+      });
+    this.eurExchangeRates.catch((problem: any) => console.error(problem));
+  }
+
+  async convert(amount: number, currency: string, date: string): Promise<number> {
+    if (currency === "HUF") {
+      return amount;
+    }
+    if (currency !== "EUR") {
+      throw new Error("Currency not supported");
+    }
+    const resolvedRates = (await this.eurExchangeRates);
+    if (!resolvedRates.has(date)) {
+      throw new Error("Exchange rate not found");
+    }
+    return resolvedRates.get(date) * amount;
+  }
+}
+
+function calculateHufAmount(eurHufExchangeRate: number, currency: string, amount: number, date: Date) {
   if (currency === "HUF") {
     return amount;
   } else if (currency === "EUR") {
